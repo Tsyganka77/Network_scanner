@@ -1,0 +1,8 @@
+#Vim
+*.swp
+*.swo
+*~
+
+#Системные
+.DS_Store
+Thumbs.db
