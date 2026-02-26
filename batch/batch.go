@@ -1,7 +1,9 @@
 package batch
 
 import(
-	"sync"
+	"time"
+	"context"
+	"sync" //Для работы с горутинами
 	"network-scanner/ping"
 )
 
@@ -14,12 +16,12 @@ type ScanResult struct {
 //ScanHosts сканирует несколько хостов параллельно
 //hosts - список хостов
 //maxConcurrent - максимум одновременных горутин
-func ScanHosts(hosts []string, maxConcurrent int) []ScanResult {
+func ScanHosts(ctx context.Context, hosts []string, maxConcurrent int, timeout time.Duration) []ScanResult {
 	results := make([]ScanResult, 0, len(hosts))
 
 	//Канал для получения результатов
 	//Буферизированный, чтобы горутины не блокировались при отправке
-	resultChan := make(chan ScanResult, len(hosts))
+	resultChan := make(chan ScanResult, len(hosts)) //Создает ссылочный тип данных
 
 	//WaitGroup для ожидания завершения всех горутин
 	var wg sync.WaitGroup
@@ -29,6 +31,14 @@ func ScanHosts(hosts []string, maxConcurrent int) []ScanResult {
 
 	//Запускаем горрутины для каждого хоста
 	for _, host := range hosts {
+
+		select{
+		case<-ctx.Done():
+			close(resultChan)
+			return results
+		default:
+		}
+
 		wg.Add(1)
 		go func(h string){
 			defer wg.Done()
@@ -40,7 +50,7 @@ func ScanHosts(hosts []string, maxConcurrent int) []ScanResult {
 			defer func(){<-semaphore}()
 
 			//Выполняем пинг
-			result := ping.PingHost(h)
+			result := ping.PingHost(ctx, h, timeout)
 
 			//Отправляем результат в канал
 			resultChan <- ScanResult{

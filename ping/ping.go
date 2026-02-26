@@ -1,6 +1,7 @@
 package ping
 
 import (
+	"context"
 	"os/exec"    //Для запуска внешних команд
 	"strconv"    //Преобразование строки в число
         "strings"    //Работа со строками
@@ -16,13 +17,17 @@ type PingResult struct {
 }
 
 //pingHost - проверка доступности хоста
-func PingHost(host string) PingResult{
+func PingHost(ctx context.Context, host string, timeout time.Duration) PingResult{
 	result := PingResult{
 		Host: host,
 		Available: false,
 		Latency: 0,
 		Error: nil,
 	}
+
+	//Создаем контекст с таймаутом
+	ctx, cancel:= context.WithTimeout(ctx, timeout)
+	defer cancel()//Освобождаем ресурсыт
 
 	//Засекаем время пинг
 	startTime := time.Now()
@@ -32,15 +37,23 @@ func PingHost(host string) PingResult{
 	var cmd *exec.Cmd
 	//Определяем ОС
 	if utils.IsWindows(){
-		cmd = exec.Command("ping","-n","1",host)
+		cmd = exec.CommandContext(ctx, "ping","-n","1",host)
 	}else{
-		cmd = exec.Command("ping","-c","1",host)
+		cmd = exec.CommandContext(ctx, "ping","-c","1",host)
 	}
 
 	//Выполняем команду и получаем вывод
 	output, err := cmd.CombinedOutput()
 	//Считаем время ответа
 	result.Latency = time.Since(startTime)
+
+	//Проверяем была ли отмена по контексту
+	if ctx.Err() == context.DeadlineExceeded{
+		result.Error = context.DeadlineExceeded
+		result.Available = false
+		return result
+	}
+
 	//Проверяем ошибку
 	if err != nil{
 		result.Error = err
