@@ -1,6 +1,7 @@
 package batch
 
 import(
+	"fmt"
 	"time"
 	"context"
 	"sync" //Для работы с горутинами
@@ -34,6 +35,7 @@ func ScanHosts(ctx context.Context, hosts []string, maxConcurrent int, timeout t
 
 		select{
 		case<-ctx.Done():
+			fmt.Println("Сканирование прервано")
 			close(resultChan)
 			return results
 		default:
@@ -43,19 +45,26 @@ func ScanHosts(ctx context.Context, hosts []string, maxConcurrent int, timeout t
 		go func(h string){
 			defer wg.Done()
 
-			//Захватываем слот в Семафоре
-			semaphore <-struct{}{}
-
+			select{
+			case <- ctx.Done():
+				return
+				//Захватываем слот в Семафоре
+				case semaphore <-struct{}{}:
+			}
 			//освобождаем слот после завершения
 			defer func(){<-semaphore}()
 
 			//Выполняем пинг
 			result := ping.PingHost(ctx, h, timeout)
 
+			select{
+			case <- ctx.Done():
+				return
 			//Отправляем результат в канал
-			resultChan <- ScanResult{
+			case resultChan <- ScanResult{
 				Host: h,
 				Result: result,
+			}:
 			}
 
 		}(host)
@@ -69,7 +78,12 @@ func ScanHosts(ctx context.Context, hosts []string, maxConcurrent int, timeout t
 
 	//Собираем все результаты из канала
 	for res := range resultChan{
-		results = append(results, res)
+		select{
+		case <- ctx.Done():
+			return results
+		default:
+			results = append(results, res)
+		}
 	}
 
 	return results
